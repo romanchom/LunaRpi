@@ -17,6 +17,7 @@ luna_connection::luna_connection(const std::string & certificate_directory) {
     m_command_configuration.set_own_certificate(&m_own_certificate, &m_own_private_key);
 
     m_command_configuration.set_defaults(tls::endpoint::server, tls::transport::stream, tls::preset::default_);
+    //m_command_configuration.set_authentication_mode(tls::authentication_mode::none);
     m_command_configuration.set_authentication_mode(tls::authentication_mode::required);
     m_command_configuration.set_random_generator(&m_random);
 
@@ -43,10 +44,6 @@ void luna_connection::listen(uint16_t base_port) {
         }
         std::cout << "Client requests connection" << std::endl;
         m_command_ssl.set_input_output(&m_command_socket);
-
-        m_command_ssl.set_client_id(
-            reinterpret_cast<unsigned char *>(client_address.data),
-            client_address.size);
             
         std::cout << "Performing handshake" << std::endl;
         auto handshake_succesful = m_command_ssl.handshake();
