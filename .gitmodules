@@ -1,3 +1,3 @@
 [submodule "DTLS-server"]
 	path = DTLS-server
-	url = ../DTLS-server.git
+	url = https://github.com/romanchom/DTLS-server.git
