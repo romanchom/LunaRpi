@@ -17,7 +17,6 @@ public:
     void listen(uint16_t base_port);
 private:
     void read_commands(); 
-    void parse_command(char * data, int size);
     tls::certificate m_ca_certificate;
     tls::certificate m_own_certificate;
     tls::private_key m_own_private_key;

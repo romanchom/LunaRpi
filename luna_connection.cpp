@@ -1,6 +1,9 @@
 #include "luna_connection.hpp"
 
-#include <arpa/inet.h>
+
+#include <cstdint>
+#include "binarystream.h"
+#include "packets.h"
 
 luna_connection::luna_connection(const std::string & certificate_directory) {
     m_random.seed(&m_entropy, "Some random string", 6);
@@ -58,24 +61,26 @@ void luna_connection::listen(uint16_t base_port) {
 }
 
 void luna_connection::read_commands() {
-    uint16_t message_length;
-    char buffer[1024];
-    int count;
-    while (true) {
-        count = m_command_ssl.read(reinterpret_cast<char *>(&message_length), sizeof(message_length));
-        if (count != sizeof(message_length)) break;
+    std::vector<uint8_t> shared_key(16);
+    m_random.generate(shared_key.data(), shared_key.size());
 
-        message_length = ntohs(message_length);
-        count = m_command_ssl.read(buffer, sizeof(buffer));
-        if (count != message_length) break;
-
-        parse_command(buffer, count);
+    BinaryStream stream(&m_command_ssl);
+    
+    Request request;
+    stream >> request;
+    std::cout << "Request " << static_cast<int>(request) << std::endl;
+    if (Request::configuration == request) {
+        std::cout << "Making response" << std::endl;
+        stream << request;
+        ConfigurationResponse response = {
+            {
+                {7, 120, {-100, -100, 0}, {-100, 100, 0}},
+                {7, 120, {100, -100, 0}, {100, 100, 0}},
+            },
+            shared_key,
+        };
+        stream << response;
+        
+        std::cout << "Sent response" << std::endl;
     }
-}
-
-void luna_connection::parse_command(char * data, int size) {
-    for (int i = 0; i < size; ++i) {
-        std::cout << static_cast<int>(data[i]) << " ";
-    }
-    std::cout << std::endl;
 }
