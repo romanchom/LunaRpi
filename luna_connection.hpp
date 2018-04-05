@@ -15,8 +15,7 @@ public:
     luna_connection(const std::string & certificate_directory);
     ~luna_connection();
     void listen(uint16_t base_port);
-private:
-    void read_commands(); 
+private: 
     tls::certificate m_ca_certificate;
     tls::certificate m_own_certificate;
     tls::private_key m_own_private_key;
@@ -29,8 +28,8 @@ private:
     tls::configuration m_command_configuration;
     tls::ssl m_command_ssl;
 
-    /*socket_input_output m_data_socket;
-    configuration m_data_configuration;*/
+    tls::configuration m_data_configuration;
+    tls::socket_input_output m_data_socket;
         
 
 };

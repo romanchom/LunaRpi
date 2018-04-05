@@ -2,8 +2,21 @@
 
 
 #include <cstdint>
+
+#include <tls/standard_cookie.hpp>
+#include <tls/standard_timer.hpp>
+#include <tls/standard_cookie.hpp>
+
 #include "binarystream.h"
 #include "packets.h"
+
+
+static void my_debug( void *ctx, int level,
+                      const char *file, int line,
+                      const char *str )
+{
+    std::cout << file << ", " << line << ", " << str << std::endl;
+}
 
 luna_connection::luna_connection(const std::string & certificate_directory) {
     m_random.seed(&m_entropy, "Some random string", 6);
@@ -51,36 +64,91 @@ void luna_connection::listen(uint16_t base_port) {
         std::cout << "Performing handshake" << std::endl;
         auto handshake_succesful = m_command_ssl.handshake();
 
-        if (handshake_succesful) {
-            std::cout << "Handshake successful" << std::endl;
-            read_commands();
-
+        if (!handshake_succesful) {
+            std::cout << "Handshake failed." << std::endl;
+            m_command_ssl.reset_session();
+            continue;
         }
-        m_command_ssl.reset_session();
-    }
-}
+        std::cout << "Handshake successful." << std::endl;
 
-void luna_connection::read_commands() {
-    std::vector<uint8_t> shared_key(16);
-    m_random.generate(shared_key.data(), shared_key.size());
+        std::vector<uint8_t> shared_key(16);
+        m_random.generate(shared_key.data(), shared_key.size());
 
-    BinaryStream stream(&m_command_ssl);
-    
-    Request request;
-    stream >> request;
-    std::cout << "Request " << static_cast<int>(request) << std::endl;
-    if (Request::configuration == request) {
-        std::cout << "Making response" << std::endl;
-        stream << request;
-        ConfigurationResponse response = {
-            {
-                {7, 120, {-100, -100, 0}, {-100, 100, 0}},
-                {7, 120, {100, -100, 0}, {100, 100, 0}},
-            },
-            shared_key,
-        };
-        stream << response;
+        BinaryStream stream(&m_command_ssl);
         
-        std::cout << "Sent response" << std::endl;
+        Request request;
+        stream >> request;
+        std::cout << "Request " << static_cast<int>(request) << std::endl;
+        if (Request::configuration == request) {
+            std::cout << "Making response" << std::endl;
+            stream << request;
+            ConfigurationResponse response = {
+                {
+                    {7, 120, {-100, -100, 0}, {-100, 100, 0}},
+                    {7, 120, {100, -100, 0}, {100, 100, 0}},
+                },
+                shared_key,
+            };
+            stream << response;
+            
+            std::cout << "Sent response" << std::endl;
+        }
+
+        m_data_configuration.set_random_generator(&m_random);
+        m_data_configuration.set_defaults(tls::endpoint::server, tls::transport::datagram, tls::preset::default_);
+        static int const cipher_suites[] = {
+            MBEDTLS_TLS_PSK_WITH_AES_128_CCM,
+            0,
+        };
+        m_data_configuration.set_cipher_suites(cipher_suites);
+        
+        tls::standard_cookie cookie;
+        cookie.setup(&m_random);
+        m_data_configuration.set_dtls_cookies(&cookie);
+        m_data_configuration.enable_debug(&my_debug, 2);
+        
+        char const identity[] = "Luna";
+        m_data_configuration.set_shared_key(shared_key.data(),
+                    shared_key.size(),
+                    reinterpret_cast<uint8_t const*>(identity),
+                    sizeof(identity));
+                    
+        tls::ssl data_ssl;
+        data_ssl.setup(&m_data_configuration);
+
+        auto port = std::to_string(static_cast<int>(base_port + 1));
+
+        while (true) {
+            tls::socket_input_output udp_socket;
+            {
+                tls::socket_input_output udp_listen_socket;
+                std::cout << "Bind to " << client_address.to_string() << " : " << port << std::endl;
+                udp_listen_socket.bind(nullptr, port.c_str(), tls::protocol::udp);  
+                udp_listen_socket.accept(&udp_socket, &client_address);
+                //socket.bind(client_address.to_string().c_str(), port.c_str(), tls::protocol::udp);
+            }
+
+            data_ssl.set_client_id(
+                reinterpret_cast<unsigned char *>(client_address.data),
+                client_address.size);
+            data_ssl.set_input_output(&udp_socket);
+
+            tls::standard_timer timer;
+            data_ssl.set_timer(&timer);
+            std::cout << "Handshaking DTLS" << std::endl;
+            if (!data_ssl.handshake()) { 
+                data_ssl.reset_session();
+                continue;
+            }
+            std::cout << "Handshake done" << std::endl;
+
+            for (int i = 0; i < 10; ++i) {
+                std::stringstream ss;
+                ss << "This is message number " << i;
+                auto str = ss.str();
+                data_ssl.write(str.c_str(), str.size() + 1);
+                std::cout << "Wrote " << str;
+            }
+        }
     }
-}
+} 
